@@ -3,6 +3,8 @@
 (require "Matrix_List_Helpers.rkt")
 
 (provide adaptive-stepper
+         adaptive-step
+         rkf45
          stepper-vec
          rk4-vec)
 ;;--Functions for numerically solving Ordinary Differential Equations
@@ -123,23 +125,23 @@
 
 
 ;;--------------------------------Adaptive Stepper------------------------------
-;; Derivative [Listof Number] Number Number Number Number
+;; Stepper Derivative [Listof Number] Number Number Number Number
 ;;                                  -> [Listof (list Number [Listof Number])]
 ;; Computes list of t's and matching x's visited traveling from t0 to t-final,
 ;;   using adaptive step sizes, with initial step length h
-(define (adaptive-stepper deriv x0 t0 t-final h tol)
+(define (adaptive-stepper a-step deriv x0 t0 t-final h tol)
   (local ((define t-btwn (+ t0 h))
-          (define x&error (adaptive-step deriv t0 x0 t-btwn))
+          (define x&error (a-step deriv t0 x0 t-btwn))
           (define x1 (first x&error))
           (define err (argmax (λ (x) x) (second x&error))))
     (cond
       [(> t0 t-final) '()]
-      [(> err tol) (adaptive-stepper deriv x0 t0 t-final (/ h 2) tol)]
+      [(> err tol) (adaptive-stepper a-step deriv x0 t0 t-final (/ h 2) tol)]
       [(< err (/ tol 4))
        (cons (list t-btwn x1)
-             (adaptive-stepper deriv x1 t-btwn t-final (* 2 h) tol))]
+             (adaptive-stepper a-step deriv x1 t-btwn t-final (* 2 h) tol))]
       [else (cons (list t-btwn x1)
-                  (adaptive-stepper deriv x1 t-btwn t-final h tol))])))
+                  (adaptive-stepper a-step deriv x1 t-btwn t-final h tol))])))
 
 
 ;; Derivative Number [Listof Number] Number -> [Listof [Listof Number] Number]
@@ -160,10 +162,35 @@
           (define error-estimate (map (λ (x) (abs x)) (axpy x1 -1 x1-try))))
     (list x1 error-estimate)))
 
+;; Derivative Number [Listof Number] Number -> [Listof [Listof Number] Number]
+;; Runge-Kutta-Fehlberg 4 and 5, adaptive stepper (rk45)
+;; Source:
+;;http://mathfaculty.fullerton.edu/mathews//n2003/rungekuttafehlberg/RungeKuttaFehlbergProof.pdf
+;;Note, there is a mistake in this text. Correct coeff is 2197/4104 not 2197/4101
+(module+ test
+  (check-equal? (rkf45 (λ (t x) '(0)) 0 '(0) 1) '((0) (0)))
+  (check-equal? (rkf45 (λ (t x) (list (+ (sqr t) (* 2 t) t 5))) 0 '(2) 1) '((53/6) (0)))
+  (check-equal? (rkf45 (λ (t x) (list (+ (* 4 (expt t 3)) (- (sqr t)) (* 2 t) 2))) 1 '(-5) 3) '((235/3) (0))))
+(define (rkf45 deriv t0 x0 t1)
+  (local ((define h (- t1 t0))
+          (define k1 (scale-vector h (deriv t0 x0)))
+          (define k2 (scale-vector h (deriv (+ t0 (/ h 4)) (axpy k1 1/4 x0))))
+          (define k3 (scale-vector h (deriv (+ t0 (* 3/8 h))
+                                            (axpy k2 9/32 (axpy k1 3/32 x0)))))
+          (define k4 (scale-vector h (deriv (+ t0 (* 12/13 h))
+                                            (axpy k3 7296/2197 (axpy k2 -7200/2197 (axpy k1 1932/2197 x0))))))
+          (define k5 (scale-vector h (deriv (+ t0 h)
+                                            (axpy k4 -845/4104 (axpy k3 3680/513 (axpy k2 -8 (axpy k1 439/216 x0)))))))
+          (define k6 (scale-vector h (deriv (+ t0 (* 1/2 h))
+                                            (axpy k5 -11/40 (axpy k4 1859/4104 (axpy k3 -3544/2565 (axpy k2 2 (axpy k1 -8/27 x0))))))))
+          (define rk4-guess (axpy k5 -1/5 (axpy k4 2197/4104 (axpy k3 1408/2565 (axpy k1 25/216 x0)))))
+          (define rk5-guess (axpy k6 2/55 (axpy k5 -9/50 (axpy k4 28561/56430 (axpy k3 6656/12825 (axpy k1 16/135 x0))))))
+          (define error (map (λ (x) (abs x)) (axpy rk4-guess -1 rk5-guess))))
+    (list rk5-guess error)))
 
 
 ;;---------------------------------Examples-------------------------------------
-#;(define res (adaptive-stepper (λ (t x) (list (cos t))) '(0) 0 (* 2 pi) 1
+#;(define res (adaptive-stepper adaptive-step (λ (t x) (list (cos t))) '(0) 0 (* 2 pi) 1
                                 (expt 10 -2)))
 #;(define ts (map (λ (X) (first X)) res))
 #;(define xs (map (λ (X) (first (second X))) res))
