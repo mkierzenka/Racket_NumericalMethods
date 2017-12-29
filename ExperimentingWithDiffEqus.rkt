@@ -24,8 +24,8 @@
 
 #;(plot (list (axes)
             (points (map vector ex2-ts ex2-xs))
-            (function exp 0 pi #:color "red" #:label "sin")))
+            (function exp 0 pi #:color "red" #:label "e^x")))
 
 #;(plot (list (axes)
             (points (map vector ex3-ts ex3-xs))
-            (function exp 0 pi #:color "red" #:label "e^x")))
+            (function (λ (t) (* -50 (sqr t))) 0 pi #:color "red" #:label "-50t^2")))
