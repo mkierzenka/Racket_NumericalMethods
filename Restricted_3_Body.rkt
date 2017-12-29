@@ -39,8 +39,6 @@
           (define y2 (fourth X))
           (define r1 (sqrt (+ (sqr (+ x1 mu)) (sqr y1))))
           (define r2 (sqrt (+ (sqr (- x1 lam)) (sqr y1))))
-          ;(define r1 (sqrt (+ (sqr (+ x1 mu)) (sqr y1))))
-          ;(define r2 (sqrt (+ (sqr (- x1 lam)) (sqr y1))))
           (define x1-prime x2)
           (define x2-prime (- (+ (* 2 y2) x1)
                               (/ (* lam (+ x1 mu)) (expt r1 3))
@@ -53,8 +51,10 @@
 
 
 
+#;(define RESULT
+  (adaptive-stepper adaptive-step deriv3body 3body-x0 0 3body-period 0.01 (expt 10 -5)))
 (define RESULT
-  (adaptive-stepper deriv3body 3body-x0 0 3body-period 0.01 (expt 10 -3)))
+  (adaptive-stepper rkf45 deriv3body 3body-x0 0 3body-period 0.01 (expt 10 -5)))
 (define pts (map (λ (TX) (second TX)) RESULT))
 (length pts) ;;Number of steps
 (define 3body-xs (map (λ (X) (first X)) pts))
