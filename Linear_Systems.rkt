@@ -1,5 +1,7 @@
 #lang racket
 (module+ test (require rackunit))
+(require test-engine/racket-tests)
+
 (require "Matrix_List_Helpers.rkt")
 
 (provide linsys-solver) ;Solves a system of linear equations
@@ -20,20 +22,20 @@
 
 (define m-ex2 '((1 1)
                 (2 1)))
-(define m-ut-ex2 '((1  1)
-                   (0 -1)))
+(define m-ut-ex2 '((2  1)
+                   (0 1/2)))
 (define rhs-ex2 (list 2 3))
-(define rhs-ut-ex2 (list 2 -1))
+(define rhs-ut-ex2 (list 3 1/2))
 (define sol-ex2 (list 1 1))
 
 (define m-ex3 '((1 2 3)
                 (4 5 6)
                 (7 8 9)))
-(define m-ut-ex3 '((1  2  3)
-                   (0 -3 -6)
+(define m-ut-ex3 '((7 8 9)
+                   (0 6/7 12/7)
                    (0  0  0)))
 (define rhs-ex3 (list 2 2 2))
-(define rhs-ut-ex3 (list 2 -6 0))
+(define rhs-ut-ex3 (list 2 12/7 0))
 
 (define m-ex4 '(( 1  2 1)
                 ( 2  2 3)
@@ -48,15 +50,19 @@
 
 ;; Matrix [Listof Number] -> [Listof Matrix [Listof Number]]
 ;; Solves a general system of linear equations A*<x1,x2...xn> = <c1,c1...cn>
+;; Uses Partial pivoting and Gaussian Elimination
 (module+ test
   (check-equal? (linsys-solver m-ex2 rhs-ex2) sol-ex2)
-  (check-equal? (linsys-solver m-ex4 rhs-ex4) sol-ex4))
+  (check-equal? (linsys-solver m-ex4 rhs-ex4) sol-ex4)
+  (check-equal? (linsys-solver '((0 2 0) (2 0 0) (0 0 2)) '(4 4 4)) (list 2 2 2))
+  (check-equal? (linsys-solver '((0 0 3) (0 2 0) (2 0 0)) '(4 4 4)) (list 2 2 4/3))
+  (check-error (linsys-solver '((0 0 3) (0 0 0) (2 0 0)) '(4 4 4)))) ;Singular Matrix
 (define (linsys-solver A rhs)
-  (local ((define a&rhs (list A rhs))
+  (local ((define a&rhs (combine A rhs))
           (define new-a&rhs (elim-ab a&rhs))
-          (define ut-A (first new-a&rhs))
-          (define ut-rhs (second new-a&rhs)))
-    (linsys-solver-ut ut-A ut-rhs)))
+          (define ut-A (get-M new-a&rhs))
+          (define ut-rhs (get-rhs new-a&rhs)))
+    (backward-sub ut-A ut-rhs)))
 
   
 ;; Matrix [Listof Number] -> [Listof Number]
@@ -64,19 +70,19 @@
 ;; A*<x1,x2...xn> = <c1,c2...cn>   -> A is coefficient matrix, <c1...cn> is rhs
 ;; ASSUME Matrix is upper-triangular and all diagonal entries are non-zero
 (module+ test
-  (check-equal? (linsys-solver-ut m-ut-ex1 rhs-ut-ex1) ;x+y=5, y=3
+  (check-equal? (backward-sub m-ut-ex1 rhs-ut-ex1) ;x+y=5, y=3
                 sol-ex1)
-  (check-equal? (linsys-solver-ut (list (list 1 1) (list 0 3)) (list 5 1))
+  (check-equal? (backward-sub (list (list 1 1) (list 0 3)) (list 5 1))
                 (list 14/3 1/3))
-  (check-equal? (linsys-solver-ut (list (list 2 1) (list 0 -1)) (list 3 -1))
+  (check-equal? (backward-sub (list (list 2 1) (list 0 -1)) (list 3 -1))
                 (list 1 1)))
 
-(define (linsys-solver-ut A rhs0)
+(define (backward-sub A rhs0)
   (local (; Number [Listof Number] -> [Listof Number]
           ; Uses current righthand side to solve the kth element of row
-          (define (linsys-solver-r k rhs)
-            (replace (linsys-solver-sub (get-ith A k) rhs k) k rhs)))
-    (foldr (λ (row-index current-rhs) (linsys-solver-r row-index current-rhs))
+          (define (b-sub-r k rhs)
+            (replace (b-sub-row (get-ith A k) rhs k) k rhs)))
+    (foldr (λ (row-index current-rhs) (b-sub-r row-index current-rhs))
            rhs0
            (my-make-list 1 (length A)))))
 
@@ -85,47 +91,112 @@
 ;; Uses row of A and col of constants/solution to get kth solution
 ;; Assume row[k] isn't 0
 (module+ test
-  (check-equal? (linsys-solver-sub (list 1 3) (list 1 3) 1) -8)
-  (check-equal? (linsys-solver-sub (list 1 1) (list 5 1) 1) 4))
-(define (linsys-solver-sub coefs sols k)
+  (check-equal? (b-sub-row (list 1 3) (list 1 3) 1) -8)
+  (check-equal? (b-sub-row (list 1 1) (list 5 1) 1) 4))
+(define (b-sub-row coefs sols k)
   (/ (- (get-ith sols k) (dot-prod-n (add1 k) coefs sols))
      (get-ith coefs k)))
 
 
 ;-------------------------------Elimination-------------------------------------
-;; [Listof Matrix [Listof Number]] -> [Listof UTMatrix [Listof Number]]
-;; Make A and rhs into upper triangular form
+;; Ext-Matrix -> Ext-Matrix
+;; Make A and rhs (in one) into upper triangular form, uses partial pivoting
 (module+ test
-  (check-equal? (elim-ab (list m-ex2 rhs-ex2))
-                (list m-ut-ex2 rhs-ut-ex2))
-  (check-equal? (elim-ab (list m-ex3 rhs-ex3))
-                (list m-ut-ex3 rhs-ut-ex3)))
-(define (elim-ab a&rhs)
-  (foldl elim-col&rhs
-         a&rhs
-         (my-make-list 1 (sub1 (length (first a&rhs))))))
+  (check-equal? (elim-ab (combine m-ex2 rhs-ex2))
+                (combine m-ut-ex2 rhs-ut-ex2))
+  (check-equal? (elim-ab (combine m-ex3 rhs-ex3))
+                (combine m-ut-ex3 rhs-ut-ex3)))
+(define (elim-ab a&rhs0)
+  (local (;; Number Ext-Matrix -> Ext-Matrix
+          ;; Eliminates col column and remaining cols in Ext-Matrix (not rhs)
+          ;; Uses partial pivoting (through split func)
+          #;(module+ test
+              (check-equal? (elim-col&rhs 1 (list (list 1 1 2) (list 2 1 3)))
+                            (list (list 2 1 3) (list 0 1/2 1/2))))
+          (define (elim-col&rhs col a&rhs)
+            (cond
+              [(empty? a&rhs) '()]
+              [else (local ((define split (my-split a&rhs (λ (row) (abs (get-ith row col)))))
+                            (define r (first split))
+                            (define new-a&rhs (new-elim col r (second split))))
+                      (cons r (elim-col&rhs (add1 col) new-a&rhs)))])))
+    (elim-col&rhs 1 a&rhs0)))
 
 
-;; Number [Listof Matrix [Listof Number]] -> [Listof Matrix [Listof Number]]
-;; Makes A and rhs into uppertriangular
+;; Number [Listof Number] Ext-Matrix -> Ext-Matrix
+;; Eliminate kth column from rest of Matrix using the given row
+;; Throws errors if Matrix is singular
 (module+ test
-  (check-equal? (elim-col&rhs 1 (list (list (list 1 1) (list 2 1)) (list 2 3)))
-                (list (list (list 1 1) (list 0 -1)) (list 2 -1))))
-(define (elim-col&rhs col m&rhs)
-  (local ((define A (first m&rhs))
+  (check-equal? (new-elim 1 (list 1 1 2) (list (list 2 1 3)))
+                (list (list 0 -1 -1)))
+  (check-equal? (new-elim 2 (list 1 1 2) (list (list 2 1 3)))
+                (list (list 1 0 1)))
+  (check-equal? (new-elim 1 (list 1 1 2) (list (list 2 4 3) (list 4 1 1)))
+                (list (list 0 2 -1) (list 0 -3 -7)))
+  (check-error (new-elim 1 '(0 0 3) '((1 0 0) (2 0 0))))
+  (check-error (new-elim 1 '(0 0 3) '((0 2 0) (2 0 0)))))
+(define (new-elim col row rest-a&rhs)
+  (local ((define A (get-M rest-a&rhs))
           (define N (length A))
-          (define rhs (second m&rhs))
-          (define Akk (get-ith (get-ith A col) col))
-          (define elim-A
-            (map (λ (x)
-                   (local ((define coef (/ (get-ith (get-ith A x) col) Akk)))
-                     (axpy (get-ith A col) (- coef) (get-ith A x))))
-                 (my-make-list (add1 col) N)))
-          (define elim-rhs
-            (map (λ (x)
-                   (local ((define coef (/ (get-ith (get-ith A x) col) Akk)))
-                     (+ (get-ith rhs x) (* (- coef) (get-ith rhs col)))))
-                 (my-make-list (add1 col) N)))
-          (define new-A (append (sub-list A 1 col) elim-A))
-          (define new-B (append (sub-list rhs 1 col) elim-rhs)))
-    (list new-A new-B)))
+          (define Akk (get-ith row col)))
+    (map (λ (x)
+           (local ((define coef (safe-coef (get-ith (get-ith rest-a&rhs x) col) Akk)))
+             (axpy row (- coef) (get-ith rest-a&rhs x))))
+         (my-make-list 1 N))))
+
+
+;; [Listof Any] [Any -> Number] -> (list Any [Listof Any])
+;; Returns the Any which maximizes the score function and the rest of the list
+(module+ test
+  (check-equal? (my-split '(1 2 3 2 1) (λ (x) (abs x))) (list 3 '(1 2 2 1)))
+  (check-equal? (my-split '(1 2 3 3 2 3 1) (λ (x) (abs x))) (list 3 '(1 2 3 2 3 1)))
+  (check-equal? (my-split '(1 2 -3 -2 1) (λ (x) (abs x))) (list -3 '(1 2 -2 1))))
+(define (my-split loa scorer)
+  (local ((define best-val (argmax scorer loa))
+          (define others (remove best-val loa)))
+    (list best-val others)))
+
+;; Matrix [Listof Number] -> Ext-Matrix
+;; Combines a Matrix and rhs into one extended matrix
+;; ASSUME Number of rows in Matrix = Number of elements in list
+(module+ test
+  (check-equal? (combine (list (list 1 2) (list 4 5)) (list 3 6))
+                (list (list 1 2 3) (list 4 5 6)))
+  (check-equal? (combine (list (list 3 5 3) (list 1 1 1) (list 2 2 2)) (list 8 8 8))
+                (list (list 3 5 3 8) (list 1 1 1 8) (list 2 2 2 8))))
+(define (combine A rhs)
+  (local ((define N (length A))
+          (define indices (my-make-list 1 N)))
+    (map (λ (k) (append (get-ith A k) (list (get-ith rhs k)))) indices)))
+
+;; Ext-Matrix -> Matrix
+;; Extracts Matrix from the combined Matrix and rhs
+(module+ test
+  (check-equal? (get-M (combine (list (list 1 2) (list 4 5)) (list 3 6)))
+                (list (list 1 2) (list 4 5)))
+  (check-equal? (get-M (combine (list (list 3 5 3) (list 1 1 1) (list 2 2 2)) (list 8 8 8)))
+                (list (list 3 5 3) (list 1 1 1) (list 2 2 2))))
+(define (get-M m&rhs)
+  (local ((define m-length (length m&rhs)))
+    (map (λ (row) (take row m-length)) m&rhs)))
+
+;; Ext-Matrix -> [Listof Number]
+;; Extracts rhs from the combined Matrix and rhs
+(module+ test
+  (check-equal? (get-rhs (combine (list (list 1 2) (list 4 5)) (list 3 6))) (list 3 6))
+  (check-equal? (get-rhs (combine (list (list 3 5 3) (list 1 1 1)) (list 8 8))) (list 8 8)))
+(define (get-rhs m&rhs)
+  (map (λ (row) (last row)) m&rhs))
+
+;; Number Number -> Number
+;; Performs division to calculate coefficient or throws proper error
+(module+ test
+  (check-equal? (safe-coef 0 5) 0)
+  (check-equal? (safe-coef 1 2) 1/2)
+  (check-error (safe-coef 2 0))
+  (check-error (safe-coef 0 0)))
+(define (safe-coef elem Akk)
+  (cond
+    [(and (zero? elem) (zero? Akk)) (error "Singular Matrix, Infinitely many solutions")]
+    [(zero? Akk) (error "Singular Matrix, No solutions")]
+    [else (/ elem Akk)]))
