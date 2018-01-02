@@ -1,5 +1,5 @@
 # Racket_NumericalMethods
-A collection of Numerical Methods implemented in Racket. Includes Root Finders, ODE Solvers, Linear System Solvers, etc. as well as Applications/Demos.
+A collection of Numerical Methods implemented in Racket. Includes Root Finders, ODE Solvers, Linear System Solvers, Polynomial Interpolation, etc. as well as Applications/Demos.
 The different methods are mostly split into individual files.
 
 The "Experimenting" files include demos to show the different methods through examples.
