@@ -1,6 +1,8 @@
 #lang racket
 (module+ test (require rackunit))
 
+(provide eval-poly)
+
 
 ;;--Polynomials are represented as a list of coefficients
 ;;--Least significant is first
