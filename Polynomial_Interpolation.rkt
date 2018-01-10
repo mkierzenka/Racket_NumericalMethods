@@ -6,6 +6,9 @@
          "Linear_Systems.rkt"
          "Polynomial_Ops.rkt")
 
+(provide calc-poly
+         poly-interp)
+
 
 ;; A Polynomial is represented as a list of coefficients, in ascending degree
 ;; Eg. (list 1 2 3) corresponds to 1+2x+3x^2
